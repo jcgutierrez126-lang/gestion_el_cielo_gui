@@ -152,8 +152,11 @@ export default function ProfilePage() {
     try {
       const updated = await apiPatch(ME_URL, { avatar_url: avatarUrl }, token)
       const stored = getUser()
-      if (stored) saveAuth(getToken()!, { ...stored, avatar_url: updated.avatar_url })
-      setAvatarStatus({ type: "success", msg: "Foto actualizada. Recarga para verla en el header." })
+      if (stored) {
+        saveAuth(getToken()!, { ...stored, avatar_url: updated.avatar_url })
+        window.dispatchEvent(new CustomEvent("cielo-user-updated"))
+      }
+      setAvatarStatus({ type: "success", msg: "Foto actualizada." })
     } catch (e: unknown) {
       setAvatarStatus({ type: "error", msg: e instanceof Error ? e.message : "Error al guardar" })
     } finally { setAvatarLoading(false) }
