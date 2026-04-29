@@ -59,7 +59,7 @@ export default function TiposCobroPage() {
   const inpSm = "text-sm border border-border rounded px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-ring w-full"
 
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Tipos de Cobro</h1>
         <p className="text-muted-foreground text-sm mt-0.5">Maestro de modalidades de pago para el control semanal</p>
