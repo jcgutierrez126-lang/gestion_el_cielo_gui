@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, Check, X } from "lucide-react"
 import { api, type TipoCobro } from "@/lib/api"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface EditState { id: number; nombre: string; abreviatura: string }
 
@@ -12,6 +13,7 @@ export default function TiposCobroPage() {
   const [nuevo, setNuevo] = useState({ nombre: "", abreviatura: "" })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState<EditState | null>(null)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
 
   const cargar = () => {
     setLoading(true)
@@ -50,8 +52,8 @@ export default function TiposCobroPage() {
   }
 
   const eliminar = async (id: number) => {
-    if (!confirm("¿Eliminar este tipo de cobro?")) return
     await api.nomina.tiposCobro.delete(id)
+    setConfirmId(null)
     cargar()
   }
 
@@ -158,7 +160,7 @@ export default function TiposCobroPage() {
                           className="p-1 text-muted-foreground hover:bg-muted rounded">
                           <Pencil className="h-4 w-4" />
                         </button>
-                        <button onClick={() => eliminar(t.id)}
+                        <button onClick={() => setConfirmId(t.id)}
                           className="p-1 text-destructive/70 hover:bg-destructive/10 rounded">
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -174,6 +176,15 @@ export default function TiposCobroPage() {
           </table>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        title="Eliminar tipo de cobro"
+        message="¿Seguro que quieres eliminar este tipo de cobro? Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
+        onConfirm={() => confirmId !== null && eliminar(confirmId)}
+        onCancel={() => setConfirmId(null)}
+      />
     </div>
   )
 }

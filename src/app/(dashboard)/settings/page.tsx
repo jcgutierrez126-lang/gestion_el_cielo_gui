@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import {
   UserPlus, Trash2, Pencil, Check, X, ShieldCheck, User, RefreshCw,
 } from "lucide-react"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 const ROLES = ["administrador", "devops", "desarrollador", "ba"] as const
 type Role = (typeof ROLES)[number]
@@ -70,6 +71,7 @@ export default function SettingsPage() {
   const [createError, setCreateError] = useState("")
   const [editState, setEditState] = useState<EditState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: number; username: string } | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -95,11 +97,11 @@ export default function SettingsPage() {
     } finally { setCreating(false) }
   }
 
-  const handleDelete = async (id: number, username: string) => {
-    if (!confirm(`¿Eliminar al usuario "${username}"?`)) return
+  const handleDelete = async (id: number) => {
     try {
       await api.users.delete(id)
       setUsers((prev) => prev.filter((u) => u.id !== id))
+      setConfirmDelete(null)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Error al eliminar")
     }
@@ -320,7 +322,7 @@ export default function SettingsPage() {
                             <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setEditState({ id: u.id, password: "", email: u.email, role: u.role as Role, is_active: u.is_active })}>
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(u.id, u.username)}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirmDelete({ id: u.id, username: u.username })}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </>
@@ -334,6 +336,15 @@ export default function SettingsPage() {
           </table>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Eliminar usuario"
+        message={confirmDelete ? `¿Seguro que quieres eliminar al usuario "${confirmDelete.username}"? Esta acción no se puede deshacer.` : ""}
+        confirmLabel="Eliminar"
+        onConfirm={() => confirmDelete && handleDelete(confirmDelete.id)}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }
