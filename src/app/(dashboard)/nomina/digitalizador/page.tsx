@@ -44,7 +44,7 @@ export default function DigitalizadorPage() {
   const [preview, setPreview] = useState<string | null>(null)
 
   useEffect(() => {
-    api.nomina.controlDiario.semanas().then(data => {
+    api.nomina.controlSemanal.semanas().then(data => {
       setSemanas(data)
       if (data.length > 0) setSemanaSeleccionada(data[0].semana_ref)
     })
@@ -78,12 +78,12 @@ export default function DigitalizadorPage() {
     if (!datosIA || !semanaSeleccionada) return
     setEstado("leyendo")
     try {
-      const registrosSistema = await api.nomina.controlDiario.porSemana(semanaSeleccionada)
+      const registrosSistema = await api.nomina.controlSemanal.porSemana(semanaSeleccionada)
 
       // Acumular totales por trabajador desde el sistema
       const porNombre: Record<string, number> = {}
       for (const r of registrosSistema) {
-        const key = r.nombre.toLowerCase().trim()
+        const key = r.empleado_nombre.toLowerCase().trim()
         porNombre[key] = (porNombre[key] ?? 0) + Number(r.valor ?? 0)
       }
 
