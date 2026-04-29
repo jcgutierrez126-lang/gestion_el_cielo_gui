@@ -233,6 +233,9 @@ export interface ControlSemanal {
   empleado_nombre: string
   fecha_inicio: string
   fecha_fin: string
+  semana_ref: string
+  dia: string | null
+  fecha: string | null
   tipo_labor: number
   tipo_labor_nombre: string
   tipo_cobro: number
@@ -258,18 +261,11 @@ export interface ControlSemanalStats {
   por_labor: { tipo_labor__nombre: string; total: string; registros: number }[]
 }
 
-export interface ControlDiario {
-  id: number
+export interface GuardarPlanillaResult {
+  ok: boolean
+  creados: number
+  errores: string[]
   semana_ref: string
-  fecha: string
-  dia: string
-  nombre: string
-  lote: string
-  labor: string
-  cantidad: string | null
-  tipo_cobro: string
-  valor: string | null
-  created_at: string
 }
 
 export interface PrestamoEmpleado {
@@ -579,6 +575,14 @@ export const api = {
         const qs = params ? "?" + new URLSearchParams(params).toString() : ""
         return request<ControlSemanalStats>(`/api/v1/nomina/control-semanal/stats/${qs}`)
       },
+      semanas: () =>
+        request<{ semana_ref: string; fecha_min: string }[]>("/api/v1/nomina/control-semanal/semanas/"),
+      porSemana: (semanaRef: string) =>
+        request<ControlSemanal[]>(`/api/v1/nomina/control-semanal/por-semana/?semana_ref=${encodeURIComponent(semanaRef)}`),
+      borrarSemana: (semanaRef: string) =>
+        request<{ eliminados: number }>(`/api/v1/nomina/control-semanal/borrar-semana/?semana_ref=${encodeURIComponent(semanaRef)}`, { method: "DELETE" }),
+      guardarPlanilla: (payload: { semana_ref: string; fecha_inicio: string; registros: object[] }) =>
+        request<GuardarPlanillaResult>("/api/v1/nomina/guardar-planilla/", { method: "POST", body: JSON.stringify(payload) }),
     },
     prestamos: {
       list: (params?: Record<string, string>) => {
@@ -613,22 +617,6 @@ export const api = {
         request<TipoCobro>(`/api/v1/nomina/tipos-cobro/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
       delete: (id: number) =>
         request<void>(`/api/v1/nomina/tipos-cobro/${id}/`, { method: "DELETE" }),
-    },
-    controlDiario: {
-      list: (params?: Record<string, string>) => {
-        const qs = params ? "?" + new URLSearchParams(params).toString() : ""
-        return request<PaginatedResponse<ControlDiario>>(`/api/v1/nomina/control-diario/${qs}`)
-      },
-      create: (data: Partial<ControlDiario>) =>
-        request<ControlDiario>("/api/v1/nomina/control-diario/", { method: "POST", body: JSON.stringify(data) }),
-      delete: (id: number) =>
-        request<void>(`/api/v1/nomina/control-diario/${id}/`, { method: "DELETE" }),
-      borrarSemana: (semanaRef: string) =>
-        request<{ eliminados: number }>(`/api/v1/nomina/control-diario/borrar-semana/?semana_ref=${encodeURIComponent(semanaRef)}`, { method: "DELETE" }),
-      semanas: () =>
-        request<{ semana_ref: string; fecha_min: string }[]>("/api/v1/nomina/control-diario/semanas/"),
-      porSemana: (semanaRef: string) =>
-        request<ControlDiario[]>(`/api/v1/nomina/control-diario/por-semana/?semana_ref=${encodeURIComponent(semanaRef)}`),
     },
   },
 

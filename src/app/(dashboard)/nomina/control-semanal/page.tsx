@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Loader2, Download, Camera, CheckCircle, AlertCircle, ChevronDown, X, Plus, Printer } from "lucide-react"
 import Link from "next/link"
-import { api, type ControlDiario, type Empleado, type TipoLabor, type Lote } from "@/lib/api"
+import { api, type ControlSemanal, type Empleado, type TipoLabor, type Lote } from "@/lib/api"
 import { getToken } from "@/lib/auth"
 import * as XLSX from "xlsx"
 
@@ -35,7 +35,7 @@ function cop(n: string | number | null | undefined) {
   return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v)
 }
 
-function fmtFecha(s: string) {
+function fmtFecha(s: string | null | undefined) {
   if (!s) return ""
   const [, m, d] = s.split("-")
   return `${d}/${m}`
@@ -63,7 +63,7 @@ interface DatosIA {
 
 interface GrupoTrabajador {
   nombre: string
-  registros: ControlDiario[]
+  registros: ControlSemanal[]
   total: number
 }
 
@@ -92,7 +92,6 @@ function FormManual({ empleados, tiposLabor, lotes, onGuardado }: { empleados: E
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
-  // Auto-seleccionar día al cambiar fecha
   function handleFecha(e: React.ChangeEvent<HTMLInputElement>) {
     const fecha = e.target.value
     const dow = new Date(fecha + "T12:00:00").getDay()
@@ -110,17 +109,29 @@ function FormManual({ empleados, tiposLabor, lotes, onGuardado }: { empleados: E
     setError(null)
     try {
       const semanaRef = semanaRefDesdeFecha(form.fecha)
-      await api.nomina.controlDiario.create({
-        semana_ref: semanaRef,
-        fecha: form.fecha,
-        dia: form.dia,
-        nombre: form.nombre.trim(),
-        lote: form.lote.trim(),
-        labor: form.labor.trim(),
-        cantidad: form.cantidad || null,
-        tipo_cobro: form.tipo_cobro,
-        valor: form.valor || null,
-      } as Partial<ControlDiario>)
+      const token = getToken()
+      const res = await fetch(`${BASE}/api/v1/nomina/guardar-planilla/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          semana_ref: semanaRef,
+          fecha_inicio: form.fecha,
+          registros: [{
+            nombre: form.nombre.trim(),
+            dia: form.dia,
+            fecha: form.fecha,
+            lote: form.lote.trim(),
+            labor: form.labor.trim(),
+            cantidad: form.cantidad ? Number(form.cantidad) : null,
+            tipo_cobro: form.tipo_cobro,
+            valor: form.valor ? Number(form.valor) : null,
+          }],
+        }),
+      })
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
       setForm({ nombre: "", fecha: form.fecha, dia: form.dia, labor: "", lote: "", cantidad: "", tipo_cobro: "jornal", valor: "" })
       setAbierto(false)
       onGuardado(semanaRef)
@@ -259,7 +270,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
   const [nombreExcel, setNombreExcel] = useState("")
   const [fechaInicio, setFechaInicio] = useState(getLunesDeHoy)
 
-  /* ── Imagen → Claude ── */
   async function handleImagen(file: File) {
     setPreview(URL.createObjectURL(file))
     setEstado("leyendo")
@@ -283,7 +293,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     }
   }
 
-  /* ── Excel → backend parser ── */
   function handleExcelSeleccionado(file: File) {
     setArchivoExcel(file)
     setNombreExcel(file.name)
@@ -315,32 +324,42 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     }
   }
 
-  /* ── Guardar registros confirmados ── */
   async function guardar() {
     if (!datos) return
     setEstado("guardando")
     const fechaHeader = datos.fecha_inicio || datos.fecha || ""
-    const semanaRef   = datos.semana_ref || fechaHeader
+    const semanaRef   = datos.semana_ref || semanaRefDesdeFecha(fechaHeader) || fechaHeader
 
-    const promesas = datos.registros.map(r => {
-      const fecha = r.fecha || fechaHeader
-      const dia   = r.dia || ""
-      return api.nomina.controlDiario.create({
-        semana_ref: semanaRef,
-        fecha,
-        dia,
-        nombre:     r.nombre,
-        lote:       r.lote || "",
-        labor:      r.labor,
-        cantidad:   r.cantidad !== null ? String(r.cantidad) : null,
-        tipo_cobro: r.tipo_cobro,
-        valor:      r.valor !== null ? String(r.valor) : null,
-      } as Partial<ControlDiario>)
-    })
-
-    await Promise.allSettled(promesas)
-    setEstado("listo")
-    onGuardado(semanaRef)
+    try {
+      const token = getToken()
+      const res = await fetch(`${BASE}/api/v1/nomina/guardar-planilla/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          semana_ref: semanaRef,
+          fecha_inicio: fechaHeader,
+          registros: datos.registros.map(r => ({
+            nombre:     r.nombre,
+            dia:        r.dia || "",
+            fecha:      r.fecha || fechaHeader,
+            lote:       r.lote || "",
+            labor:      r.labor,
+            cantidad:   r.cantidad,
+            tipo_cobro: r.tipo_cobro,
+            valor:      r.valor,
+          })),
+        }),
+      })
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+      setEstado("listo")
+      onGuardado(semanaRef)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e))
+      setEstado("error")
+    }
   }
 
   const reset = () => {
@@ -350,7 +369,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
 
   const inp = "text-sm border border-border rounded-lg px-3 py-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
 
-  /* ── idle: dos botones ── */
   if (estado === "idle") return (
     <div className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col gap-3 items-center text-center">
       <p className="font-semibold text-sm text-muted-foreground">Subir planilla</p>
@@ -378,7 +396,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     </div>
   )
 
-  /* ── fechando: pedir lunes de la semana ── */
   if (estado === "fechando") return (
     <div className="border border-border rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 bg-muted/40 border-b border-border">
@@ -389,8 +406,7 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
         <p className="text-xs text-muted-foreground">Archivo: <span className="font-medium">{nombreExcel}</span></p>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground">Lunes de la semana</label>
-          <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)}
-            className={inp} />
+          <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className={inp} />
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={reset}
@@ -404,7 +420,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     </div>
   )
 
-  /* ── leyendo ── */
   if (estado === "leyendo") return (
     <div className="border border-border rounded-xl p-7 flex flex-col items-center gap-3">
       {preview && <img src={preview} alt="planilla" className="max-h-36 rounded shadow object-contain" />}
@@ -413,7 +428,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     </div>
   )
 
-  /* ── error ── */
   if (estado === "error") return (
     <div className="border border-destructive/30 bg-destructive/5 rounded-xl p-5 flex gap-3">
       <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
@@ -425,7 +439,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     </div>
   )
 
-  /* ── listo ── */
   if (estado === "listo") return (
     <div className="border border-green-500/30 bg-green-500/5 rounded-xl p-5 flex items-center gap-3">
       <CheckCircle className="h-6 w-6 text-green-600 flex-shrink-0" />
@@ -436,7 +449,6 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     </div>
   )
 
-  /* ── guardando ── */
   if (estado === "guardando") return (
     <div className="border border-border rounded-xl p-5 flex items-center gap-3">
       <Loader2 className="h-5 w-5 animate-spin" />
@@ -444,7 +456,7 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
     </div>
   )
 
-  /* ── revisando ── */
+  /* revisando */
   return (
     <div className="border border-border rounded-xl overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-muted/40 border-b border-border">
@@ -516,7 +528,7 @@ function PanelFoto({ onGuardado }: { onGuardado: (semanaRef: string) => void }) 
 export default function ControlSemanalPage() {
   const [semanas, setSemanas] = useState<{ semana_ref: string; fecha_min: string }[]>([])
   const [semanaActual, setSemanaActual] = useState<string>("")
-  const [registros, setRegistros] = useState<ControlDiario[]>([])
+  const [registros, setRegistros] = useState<ControlSemanal[]>([])
   const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [tiposLabor, setTiposLabor] = useState<TipoLabor[]>([])
   const [lotes, setLotes] = useState<Lote[]>([])
@@ -524,7 +536,7 @@ export default function ControlSemanalPage() {
   const [loadingReg, setLoadingReg] = useState(false)
 
   function cargarSemanas(seleccionar?: string) {
-    return api.nomina.controlDiario.semanas().then(data => {
+    return api.nomina.controlSemanal.semanas().then(data => {
       setSemanas(data)
       const sel = seleccionar ?? data[0]?.semana_ref ?? ""
       setSemanaActual(sel)
@@ -543,7 +555,7 @@ export default function ControlSemanalPage() {
   useEffect(() => {
     if (!semanaActual) return
     setLoadingReg(true)
-    api.nomina.controlDiario.porSemana(semanaActual)
+    api.nomina.controlSemanal.porSemana(semanaActual)
       .then(data => setRegistros(data))
       .finally(() => setLoadingReg(false))
   }, [semanaActual])
@@ -553,36 +565,38 @@ export default function ControlSemanalPage() {
   }
 
   // Agrupación por trabajador
-  const byName: Record<string, ControlDiario[]> = {}
+  const byName: Record<string, ControlSemanal[]> = {}
   for (const r of registros) {
-    if (!byName[r.nombre]) byName[r.nombre] = []
-    byName[r.nombre].push(r)
+    const key = r.empleado_nombre
+    if (!byName[key]) byName[key] = []
+    byName[key].push(r)
   }
   const grupos: GrupoTrabajador[] = Object.keys(byName)
     .sort()
     .map(nombre => {
-      const regs = byName[nombre].slice().sort((a, b) => a.fecha.localeCompare(b.fecha))
+      const regs = byName[nombre].slice().sort((a, b) => (a.fecha ?? "").localeCompare(b.fecha ?? ""))
       const total = regs.reduce((s, r) => s + Number(r.valor ?? 0), 0)
       return { nombre, registros: regs, total }
     })
 
   // KPIs
   const totalPagado    = registros.reduce((s, r) => s + Number(r.valor ?? 0), 0)
-  const totalKilos     = registros.filter(r => r.tipo_cobro === "kilos").reduce((s, r) => s + Number(r.cantidad ?? 0), 0)
-  const totalJornales  = registros.filter(r => r.tipo_cobro === "jornal").length
+  const totalKilos     = registros.reduce((s, r) => s + Number(r.kilos ?? 0), 0)
+  const totalJornales  = registros.reduce((s, r) => s + Number(r.jornales ?? 0), 0)
   const numTrabajadores = Object.keys(byName).length
 
   function descargarExcel() {
     const filas = registros.map(r => ({
-      "Semana":     r.semana_ref,
-      "Trabajador": r.nombre,
-      "Día":        r.dia,
-      "Fecha":      r.fecha,
-      "Labor":      r.labor,
-      "Lote":       r.lote || "",
-      "Cantidad":   r.cantidad ?? "",
-      "Tipo cobro": r.tipo_cobro,
-      "Valor":      r.valor ?? "",
+      "Semana":       r.semana_ref,
+      "Trabajador":   r.empleado_nombre,
+      "Día":          r.dia ?? "",
+      "Fecha":        r.fecha ?? "",
+      "Labor":        r.tipo_labor_nombre,
+      "Lote":         r.lote_nombre || "",
+      "Kilos":        r.kilos ?? "",
+      "Jornales":     r.jornales ?? "",
+      "Tipo cobro":   r.tipo_cobro_nombre,
+      "Valor":        r.valor,
     }))
     const ws = XLSX.utils.json_to_sheet(filas)
     const wb = XLSX.utils.book_new()
@@ -628,108 +642,110 @@ export default function ControlSemanalPage() {
       </div>
 
       <>
-          {/* Selector de semana */}
-          <div className="relative inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 w-full sm:w-auto">
-            <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">Semana:</span>
-            <select
-              value={semanaActual}
-              onChange={e => setSemanaActual(e.target.value)}
-              className="flex-1 bg-transparent text-sm font-semibold focus:outline-none appearance-none pr-5 cursor-pointer"
-            >
-              {semanas.length === 0
-                ? <option value="">Sin semanas aún</option>
-                : semanas.map(s => (
-                    <option key={s.semana_ref} value={s.semana_ref}>{s.semana_ref}</option>
-                  ))
-              }
-            </select>
-            <ChevronDown className="absolute right-3 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          </div>
+        {/* Selector de semana */}
+        <div className="relative inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 w-full sm:w-auto">
+          <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">Semana:</span>
+          <select
+            value={semanaActual}
+            onChange={e => setSemanaActual(e.target.value)}
+            className="flex-1 bg-transparent text-sm font-semibold focus:outline-none appearance-none pr-5 cursor-pointer"
+          >
+            {semanas.length === 0
+              ? <option value="">Sin semanas aún</option>
+              : semanas.map(s => (
+                  <option key={s.semana_ref} value={s.semana_ref}>{s.semana_ref}</option>
+                ))
+            }
+          </select>
+          <ChevronDown className="absolute right-3 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        </div>
 
-          {/* KPIs — siempre visibles */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <KpiCard label="Total pagado" value={loadingReg ? "…" : cop(totalPagado)} sub={`${registros.length} registros`} />
-            <KpiCard label="Trabajadores" value={loadingReg ? "…" : (numTrabajadores > 0 ? String(numTrabajadores) : "—")} sub="en la semana" />
-            <KpiCard
-              label="Kilos"
-              value={loadingReg ? "…" : (totalKilos > 0 ? new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 }).format(totalKilos) : "—")}
-              sub="recolectados"
-            />
-            <KpiCard
-              label="Jornales"
-              value={loadingReg ? "…" : (totalJornales > 0 ? String(totalJornales) : "—")}
-              sub="días trabajados"
-            />
-          </div>
+        {/* KPIs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KpiCard label="Total pagado" value={loadingReg ? "…" : cop(totalPagado)} sub={`${registros.length} registros`} />
+          <KpiCard label="Trabajadores" value={loadingReg ? "…" : (numTrabajadores > 0 ? String(numTrabajadores) : "—")} sub="en la semana" />
+          <KpiCard
+            label="Kilos"
+            value={loadingReg ? "…" : (totalKilos > 0 ? new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 }).format(totalKilos) : "—")}
+            sub="recolectados"
+          />
+          <KpiCard
+            label="Jornales"
+            value={loadingReg ? "…" : (totalJornales > 0 ? new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 }).format(totalJornales) : "—")}
+            sub="días trabajados"
+          />
+        </div>
 
-          {/* Tabla semanal — siempre visible */}
-          <div className="rounded-xl border border-border overflow-hidden">
-            {loadingReg ? (
-              <div className="flex items-center justify-center py-14">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/40 text-[11px] text-muted-foreground uppercase tracking-wide">
-                        <th className="px-4 py-2.5 text-left">Trabajador / Día</th>
-                        <th className="px-3 py-2.5 text-left">Fecha</th>
-                        <th className="px-3 py-2.5 text-left">Labor</th>
-                        <th className="px-3 py-2.5 text-left">Lote</th>
-                        <th className="px-3 py-2.5 text-right">Cantidad</th>
-                        <th className="px-3 py-2.5 text-left">Cobro</th>
-                        <th className="px-3 py-2.5 text-right">Valor</th>
+        {/* Tabla semanal */}
+        <div className="rounded-xl border border-border overflow-hidden">
+          {loadingReg ? (
+            <div className="flex items-center justify-center py-14">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-[11px] text-muted-foreground uppercase tracking-wide">
+                      <th className="px-4 py-2.5 text-left">Trabajador / Día</th>
+                      <th className="px-3 py-2.5 text-left">Fecha</th>
+                      <th className="px-3 py-2.5 text-left">Labor</th>
+                      <th className="px-3 py-2.5 text-left">Lote</th>
+                      <th className="px-3 py-2.5 text-right">Kilos</th>
+                      <th className="px-3 py-2.5 text-right">Jornales</th>
+                      <th className="px-3 py-2.5 text-left">Cobro</th>
+                      <th className="px-3 py-2.5 text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grupos.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                          Sin registros para esta semana.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {grupos.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                            Sin registros para esta semana.
-                          </td>
+                    ) : grupos.map(g => (
+                      <>
+                        <tr key={`h-${g.nombre}`} className="bg-muted/25 border-y border-border/70">
+                          <td colSpan={7} className="px-4 py-2 font-semibold text-sm">{g.nombre}</td>
+                          <td className="px-3 py-2 text-right font-bold text-sm tabular-nums">{cop(g.total)}</td>
                         </tr>
-                      ) : grupos.map(g => (
-                        <>
-                          <tr key={`h-${g.nombre}`} className="bg-muted/25 border-y border-border/70">
-                            <td colSpan={6} className="px-4 py-2 font-semibold text-sm">{g.nombre}</td>
-                            <td className="px-3 py-2 text-right font-bold text-sm tabular-nums">{cop(g.total)}</td>
+                        {g.registros.map(r => (
+                          <tr key={r.id} className="border-b border-border/40 hover:bg-muted/15 text-sm">
+                            <td className="px-4 py-1.5 pl-8 text-muted-foreground text-xs">{r.dia ?? "—"}</td>
+                            <td className="px-3 py-1.5 text-muted-foreground text-xs tabular-nums">{fmtFecha(r.fecha)}</td>
+                            <td className="px-3 py-1.5 text-sm">{r.tipo_labor_nombre}</td>
+                            <td className="px-3 py-1.5 text-muted-foreground text-sm">{r.lote_nombre || "—"}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-sm">
+                              {r.kilos ? `${Number(r.kilos).toLocaleString("es-CO")} kg` : "—"}
+                            </td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-sm">
+                              {r.jornales ? Number(r.jornales).toLocaleString("es-CO") : "—"}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${BADGE[r.tipo_cobro_nombre?.toLowerCase()] ?? "bg-muted text-muted-foreground"}`}>
+                                {r.tipo_cobro_nombre}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-sm">{cop(r.valor)}</td>
                           </tr>
-                          {g.registros.map(r => (
-                            <tr key={r.id} className="border-b border-border/40 hover:bg-muted/15 text-sm">
-                              <td className="px-4 py-1.5 pl-8 text-muted-foreground text-xs">{r.dia}</td>
-                              <td className="px-3 py-1.5 text-muted-foreground text-xs tabular-nums">{fmtFecha(r.fecha)}</td>
-                              <td className="px-3 py-1.5 capitalize text-sm">{r.labor}</td>
-                              <td className="px-3 py-1.5 text-muted-foreground text-sm">{r.lote || "—"}</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-sm">
-                                {r.cantidad
-                                  ? `${Number(r.cantidad).toLocaleString("es-CO")}${r.tipo_cobro === "kilos" ? " kg" : ""}`
-                                  : "—"}
-                              </td>
-                              <td className="px-3 py-1.5">
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${BADGE[r.tipo_cobro] ?? "bg-muted text-muted-foreground"}`}>
-                                  {r.tipo_cobro}
-                                </span>
-                              </td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-sm">{cop(r.valor)}</td>
-                            </tr>
-                          ))}
-                        </>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                <div className="border-t border-border bg-muted/30 px-4 py-3 flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    {registros.length} registros · {numTrabajadores} trabajadores
-                  </p>
-                  <p className="text-sm font-bold tabular-nums">{cop(totalPagado)}</p>
-                </div>
-              </>
-            )}
-          </div>
+              <div className="border-t border-border bg-muted/30 px-4 py-3 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {registros.length} registros · {numTrabajadores} trabajadores
+                </p>
+                <p className="text-sm font-bold tabular-nums">{cop(totalPagado)}</p>
+              </div>
+            </>
+          )}
+        </div>
       </>
     </div>
   )
