@@ -1,0 +1,12 @@
+services:
+  dashboard:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://ordo.lambdaanalytics.co/api}
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    env_file: .env.production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
