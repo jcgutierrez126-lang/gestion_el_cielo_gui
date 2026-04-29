@@ -598,7 +598,7 @@ export const api = {
     },
     tiposLabor: {
       list: () => request<TipoLabor[]>("/api/v1/nomina/tipos-labor/"),
-      create: (data: { nombre: string }) =>
+      create: (data: { nombre: string; abreviatura?: string }) =>
         request<TipoLabor>("/api/v1/nomina/tipos-labor/", { method: "POST", body: JSON.stringify(data) }),
       update: (id: number, data: Partial<TipoLabor>) =>
         request<TipoLabor>(`/api/v1/nomina/tipos-labor/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
