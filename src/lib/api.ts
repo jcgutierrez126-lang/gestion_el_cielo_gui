@@ -607,7 +607,7 @@ export const api = {
     },
     tiposCobro: {
       list: () => request<TipoCobro[]>("/api/v1/nomina/tipos-cobro/"),
-      create: (data: { nombre: string }) =>
+      create: (data: { nombre: string; abreviatura?: string }) =>
         request<TipoCobro>("/api/v1/nomina/tipos-cobro/", { method: "POST", body: JSON.stringify(data) }),
       update: (id: number, data: Partial<TipoCobro>) =>
         request<TipoCobro>(`/api/v1/nomina/tipos-cobro/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
