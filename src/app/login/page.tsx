@@ -47,7 +47,7 @@ export default function LoginPage() {
         email: data.email ?? "",
         role: (data.role_name ?? role) as "administrador" | "operario" | "contador" | "propietario",
         is_superuser: data.is_admin ?? false,
-        avatar_url: data.image ?? undefined,
+        avatar_url: data.avatar_url || data.image || undefined,
       })
       router.push("/resumen")
     } catch {
